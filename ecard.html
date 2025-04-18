@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Your E‑Card</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap" rel="stylesheet">
+  <style id="dynamicVars"></style>
+  <style>
+    /* static CSS identical to builder’s viewerCSS() */
+    *{margin:0;padding:0;box-sizing:border-box;font-family:Poppins,sans-serif}
+    body{background:var(--bg,#f0f0f0);min-height:1800vh}
+    .envelope{position:fixed;top:65%;left:50%;width:60vw;height:60vh;transform:translate(-50%,-50%);perspective:800px;transform-style:preserve-3d;transition:top .6s ease,transform .8s ease;z-index:10}
+    .envelope.open{top:50%}
+    .envelope.flip{transform:translate(-50%,-50%) rotateY(180deg)}
+    .paper{position:absolute;bottom:2px;left:2px;width:calc(100% - 4px);height:0;background:var(--paper,#fff8e7);overflow:hidden;padding:2rem 1rem 2rem;box-shadow:0 2px 6px rgba(0,0,0,.1);transition:height .1s linear;z-index:2;text-align:center}
+    .body{position:absolute;top:0;left:0;width:100%;height:100%;background:var(--body,#A8E6CF);border:2px solid var(--body-border,#82C9A1);border-radius:4px;z-index:1}
+    .sticker{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:500px;height:500px;z-index:5;pointer-events:none;transition:opacity .6s ease}
+    .envelope.flip .sticker{opacity:0}
+    .mask{position:absolute;bottom:2px;left:2px;width:calc(100% - 4px);height:60%;background:var(--body,#A8E6CF);z-index:3}
+    .flap{position:absolute;top:0;left:0;width:100%;height:50%;background:var(--flap,#76C69C);border:2px solid var(--flap-border,#60A085);clip-path:polygon(0 0,100% 0,50% 100%);transform-origin:top;transform:rotateX(0deg);transition:transform .6s ease;z-index:4;backface-visibility:visible}
+    .envelope.open .flap{transform:rotateX(180deg);z-index:1}
+    .line{margin:1rem 0;font-size:1.25rem;white-space:nowrap;display:inline-block}
+    .address{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;opacity:0;transition:opacity .6s ease,transform .6s ease;z-index:20}
+    .envelope.flip .address{opacity:1;transform:translate(-50%,-50%) rotateY(180deg)}
+    .confetti{position:absolute;top:0;width:8px;height:8px;border-radius:50%;animation:fall 3s ease-out forwards;z-index:7}
+    @keyframes fall{to{transform:translateY(100vh);opacity:0}}
+  </style>
+</head>
+<body>
+
+  <div class="envelope" id="env">
+    <div class="body"></div>
+    <img class="sticker" id="st" alt="Sticker">
+    <div class="mask"></div>
+    <div class="flap"></div>
+    <div class="paper" id="paper"></div>
+    <div class="address" id="addr"></div>
+  </div>
+
+<script>
+(function(){
+  // --- decode data ---
+  const params=new URLSearchParams(location.search);
+  const dStr=params.get('d');
+  if(!dStr){
+    document.body.innerHTML='<h2 style="padding:2rem;text-align:center">No card data provided.</h2>';return;
+  }
+  let data;
+  try{
+    data=JSON.parse(decodeURIComponent(atob(dStr)));
+  }catch(e){
+    document.body.innerHTML='<h2 style="padding:2rem;text-align:center">Invalid card link.</h2>';return;
+  }
+
+  // --- apply colours as CSS vars ---
+  const style=document.getElementById('dynamicVars');
+  const shade=c=>{const num=parseInt(c.slice(1),16),amt=Math.round(-0.2*255);
+    const R=Math.max(0,Math.min(255,(num>>16)+amt)),
+          G=Math.max(0,Math.min(255,(num>>8&255)+amt)),
+          B=Math.max(0,Math.min(255,(num&255)+amt));
+    return "#"+((1<<24)+(R<<16)+(G<<8)+B).toString(16).slice(1);
+  };
+  style.textContent=`
+    :root{
+      --body:${data.colors.body};
+      --flap:${data.colors.flap};
+      --paper:${data.colors.paper};
+      --bg:${data.colors.bg};
+      --body-border:${shade(data.colors.body)};
+      --flap-border:${shade(data.colors.flap)};
+    }`;
+
+  // --- fill sticker, lines, address ---
+  if(data.sticker) document.getElementById('st').src=data.sticker;
+  else document.getElementById('st').remove();
+  const paper=document.getElementById('paper');
+  data.lines.forEach(txt=>{
+    const div=document.createElement('div');
+    div.className='line';div.textContent=txt;paper.appendChild(div);
+  });
+  document.getElementById('addr').innerHTML=
+    '<p>To: '+(data.to||'Someone')+'</p><p>From: '+(data.from||'Me')+'</p>';
+
+  // --- animation logic (identical) ---
+  const env=document.getElementById('env');
+  let flipped=false;
+  const vh=window.innerHeight,maskH=env.clientHeight*0.6,fullH=paper.scrollHeight,extra=50,totalH=maskH+fullH+extra;
+  paper.style.height='0px';
+
+  window.addEventListener('scroll',()=>{
+    const y=window.scrollY,unroll=7.5*vh,pause=0.5*vh,retract=7.5*vh;
+    if(y>10)env.classList.add('open');
+    if(y<=unroll){paper.style.height=\`\${totalH*(y/unroll)}px\`;}
+    else if(y<=unroll+pause){paper.style.height=\`\${totalH}px\`;}
+    else if(y<=unroll+pause+retract){
+      const r=(y-unroll-pause)/retract;
+      paper.style.height=\`\${totalH*(1-r)}px\`;
+    }else if(!flipped){
+      flipped=true;env.classList.remove('open');
+      setTimeout(()=>{env.classList.add('flip');
+        setInterval(()=>{for(let i=0;i<8;i++){
+          const c=document.createElement('div');c.className='confetti';
+          c.style.left=Math.random()*100+'vw';
+          c.style.backgroundColor=\`hsl(\${Math.random()*360},100%,60%)\`;
+          c.style.animationDelay=Math.random()*0.8+'s';
+          document.body.appendChild(c);
+        }},800);
+      },600);
+    }
+  });
+  // ensure a tiny scroll so animation starts in mobile browsers
+  setTimeout(()=>window.scrollTo(0,1),50);
+})();
+</script>
+</body>
+</html>
