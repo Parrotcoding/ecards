@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>E‑Card Builder</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --body:#A8E6CF; --flap:#76C69C; --paper:#fff8e7;
+      --body-border:#82C9A1; --flap-border:#60A085; --bg:#f0f0f0;
+    }
+    *{box-sizing:border-box;margin:0;padding:0;font-family:Poppins,sans-serif}
+    body{background:var(--bg);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:2rem;gap:2rem}
+    h1{font-weight:700}
+    form{display:grid;gap:1rem;width:100%;max-width:520px}
+    label{font-size:.9rem;font-weight:600}
+    input[type="text"],textarea{width:100%;padding:.5rem;border:1px solid #ccc;border-radius:4px}
+    textarea{resize:vertical;height:90px}
+    input[type="color"]{border:none;width:3rem;height:3rem;padding:0;cursor:pointer}
+    #lines li{display:flex;gap:.5rem;margin:.3rem 0}
+    #lines input{flex:1}
+    button{padding:.6rem 1rem;border:none;border-radius:4px;cursor:pointer;font-size:1rem;font-weight:600;background:#60A085;color:#fff;transition:.2s}
+    button:hover{filter:brightness(1.1)}
+    #previewWrap{border:1px dashed #bbb;border-radius:6px;padding:1rem}
+    #shareLink{word-break:break-all;padding:.6rem;background:#fff;border:1px solid #ccc;border-radius:4px;margin-top:.5rem;font-size:.9rem}
+    .addLineBtn{background:#76C69C;color:#fff;padding:.2rem .6rem;border-radius:4px;font-size:.8rem}
+  </style>
+</head>
+<body>
+
+<h1>Create Your Seafoam Envelope E‑Card</h1>
+
+<form id="cardForm">
+  <label>Square sticker (PNG/JPG/GIF)
+    <input type="file" id="stickerInput" accept="image/*">
+  </label>
+
+  <label>Message lines
+    <ul id="lines"></ul>
+    <button type="button" class="addLineBtn" id="addLine">+ Add line</button>
+  </label>
+
+  <label>To
+    <input type="text" id="toField" placeholder="Recipient Name" value="">
+  </label>
+
+  <label>From
+    <input type="text" id="fromField" placeholder="Your Name" value="">
+  </label>
+
+  <label>Envelope body colour <input type="color" id="bodyCol" value="#A8E6CF"></label>
+  <label>Flap colour <input type="color" id="flapCol" value="#76C69C"></label>
+  <label>Paper colour <input type="color" id="paperCol" value="#fff8e7"></label>
+  <label>Background colour <input type="color" id="bgCol" value="#f0f0f0"></label>
+
+  <button type="button" id="generate">Generate Link</button>
+</form>
+
+<div id="previewWrap">
+  <!-- live preview iframe -->
+  <iframe id="preview" title="Preview" style="width:100%;aspect-ratio:4/3;border:none"></iframe>
+</div>
+
+<div id="shareLink" hidden></div>
+
+<script>
+const addLineBtn = document.getElementById('addLine');
+const linesUl   = document.getElementById('lines');
+const generateBtn = document.getElementById('generate');
+const shareBox  = document.getElementById('shareLink');
+const previewIF = document.getElementById('preview');
+
+// initial two lines
+['Your first message','A cheerful note'].forEach(txt=>addLine(txt));
+
+addLineBtn.onclick = ()=>addLine('');
+
+function addLine(val){
+  const li=document.createElement('li');
+  li.innerHTML=`<input type="text" value="${val}"><button type="button" class="addLineBtn">✕</button>`;
+  li.querySelector('button').onclick=()=>li.remove();
+  linesUl.appendChild(li);
+}
+
+// read sticker
+let stickerData='';
+document.getElementById('stickerInput').addEventListener('change',e=>{
+  const f=e.target.files[0];
+  if(!f) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{stickerData=ev.target.result;refreshPreview()};
+  reader.readAsDataURL(f);
+});
+
+// whenever a colour or text field changes → refresh preview
+['bodyCol','flapCol','paperCol','bgCol','toField','fromField'].forEach(id=>{
+  document.getElementById(id).addEventListener('input',refreshPreview);
+});
+linesUl.addEventListener('input',refreshPreview);
+addLineBtn.addEventListener('click',refreshPreview);
+
+// build card data object
+function collectData(){
+  return{
+    to:document.getElementById('toField').value.trim(),
+    from:document.getElementById('fromField').value.trim(),
+    lines:[...linesUl.querySelectorAll('input')].map(i=>i.value).filter(Boolean),
+    colors:{
+      body:document.getElementById('bodyCol').value,
+      flap:document.getElementById('flapCol').value,
+      paper:document.getElementById('paperCol').value,
+      bg:document.getElementById('bgCol').value
+    },
+    sticker:stickerData||''
+  };
+}
+
+// live preview by injecting data into viewer inside the iframe
+function refreshPreview(){
+  const data=collectData();
+  const html=makeViewerHTML(data,true);
+  previewIF.srcdoc=html;
+}
+refreshPreview();
+
+// create viewer HTML for preview (isPreview flag disables animation delay)
+function makeViewerHTML(d,isPreview){
+  const encodedLines=d.lines.map(l=>`<div class="line">${l.replace(/</g,'&lt;')}</div>`).join('');
+  return `
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{--body:${d.colors.body};--body-border:${shade(d.colors.body,-20)};
+--flap:${d.colors.flap};--flap-border:${shade(d.colors.flap,-20)};
+--paper:${d.colors.paper};--bg:${d.colors.bg}}
+${viewerCSS()}
+</style></head><body>
+  <div class="envelope">
+    <div class="body"></div>
+    ${d.sticker?`<img class="sticker" src="${d.sticker}" alt="Sticker">`:''}
+    <div class="mask"></div><div class="flap"></div>
+    <div class="paper">${encodedLines}</div>
+    <div class="address"><p>To: ${d.to||'Someone'}</p><p>From: ${d.from||'Me'}</p></div>
+  </div>
+${viewerJS(isPreview)}
+</body></html>`;
+}
+
+// CSS string shared
+function viewerCSS(){return`
+*{margin:0;padding:0;box-sizing:border-box;font-family:Poppins,sans-serif}
+body{background:var(--bg);min-height:1800vh}
+.envelope{position:fixed;top:65%;left:50%;width:60vw;height:60vh;transform:translate(-50%,-50%);perspective:800px;transform-style:preserve-3d;transition:top .6s ease,transform .8s ease;z-index:10}
+.envelope.open{top:50%}
+.envelope.flip{transform:translate(-50%,-50%) rotateY(180deg)}
+.paper{position:absolute;bottom:2px;left:2px;width:calc(100% - 4px);height:0;background:var(--paper);overflow:hidden;padding:2rem 1rem 2rem;box-shadow:0 2px 6px rgba(0,0,0,.1);transition:height .1s linear;z-index:2;text-align:center}
+.body{position:absolute;top:0;left:0;width:100%;height:100%;background:var(--body);border:2px solid var(--body-border);border-radius:4px;z-index:1}
+.sticker{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:500px;height:500px;z-index:5;pointer-events:none;transition:opacity .6s ease}
+.envelope.flip .sticker{opacity:0}
+.mask{position:absolute;bottom:2px;left:2px;width:calc(100% - 4px);height:60%;background:var(--body);z-index:3}
+.flap{position:absolute;top:0;left:0;width:100%;height:50%;background:var(--flap);border:2px solid var(--flap-border);clip-path:polygon(0 0,100% 0,50% 100%);transform-origin:top;transform:rotateX(0deg);transition:transform .6s ease;z-index:4;backface-visibility:visible}
+.envelope.open .flap{transform:rotateX(180deg);z-index:1}
+.line{margin:1rem 0;font-size:1.25rem;white-space:nowrap;display:inline-block}
+.address{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;opacity:0;transition:opacity .6s ease,transform .6s ease;z-index:20}
+.envelope.flip .address{opacity:1;transform:translate(-50%,-50%) rotateY(180deg)}
+.confetti{position:absolute;top:0;width:8px;height:8px;border-radius:50%;animation:fall 3s ease-out forwards;z-index:7}
+@keyframes fall{to{transform:translateY(100vh);opacity:0}}`;}
+
+function viewerJS(preview){return`
+<script>
+window.addEventListener('DOMContentLoaded',()=>{
+const env=document.querySelector('.envelope');
+const paper=env.querySelector('.paper');
+let flipped=false;
+const vh=window.innerHeight,maskH=env.clientHeight*0.6,fullH=paper.scrollHeight,extra=50,totalH=maskH+fullH+extra;
+paper.style.height='0px';
+window.addEventListener('scroll',()=>{
+ const y=window.scrollY,unroll=7.5*vh,pause=0.5*vh,retract=7.5*vh;
+ if(y>10)env.classList.add('open');
+ if(y<=unroll){paper.style.height=\`\${totalH*(y/unroll)}px\`;}
+ else if(y<=unroll+pause){paper.style.height=\`\${totalH}px\`;}
+ else if(y<=unroll+pause+retract){
+   const r=(y-unroll-pause)/retract;paper.style.height=\`\${totalH*(1-r)}px\`;
+ }else if(!flipped){
+   flipped=true;env.classList.remove('open');
+   setTimeout(()=>{env.classList.add('flip');
+     setInterval(()=>{for(let i=0;i<8;i++){
+       const c=document.createElement('div');c.className='confetti';
+       c.style.left=Math.random()*100+'vw';
+       c.style.backgroundColor=\`hsl(\${Math.random()*360},100%,60%)\`;
+       c.style.animationDelay=Math.random()*0.8+'s';document.body.appendChild(c);
+     }},800);
+   },600);
+ }
+});
+${preview?'window.scrollTo(0,1);':''}
+});
+<\/script>`;}
+
+function shade(hex,percent){ // simple shade util
+  const num=parseInt(hex.slice(1),16),
+  amt=Math.round(2.55*percent),
+  R=(num>>16)+amt,G=(num>>8&0x00FF)+amt,B=(num&0x0000FF)+amt;
+  return "#"+(
+    0x1000000+
+    (R<255?R<1?0:R:255)*0x10000+
+    (G<255?G<1?0:G:255)*0x100+
+    (B<255?B<1?0:B:255)
+  ).toString(16).slice(1);
+}
+
+// ——— share link ———
+generateBtn.onclick=()=>{
+  const data=collectData();
+  if(!data.lines.length){alert('Please add at least one message line');return;}
+  const json=encodeURIComponent(JSON.stringify(data));
+  const base64=btoa(json);
+  const viewer='ecard.html'; // change if you rename the viewer file
+  const url=\`\${location.origin+\`/\${viewer}?d=\${base64}\`}\`;
+  shareBox.textContent=url;
+  shareBox.hidden=false;
+};
+</script>
+</body>
+</html>
